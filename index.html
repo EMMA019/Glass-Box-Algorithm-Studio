@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glass-Box Algorithm Studio v2.0</title>
+    
+    <!-- CDNs -->
+    <script src="https://unpkg.com/vue@3.4.27/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-color: #050505;
+            --grid-color: rgba(0, 255, 255, 0.05);
+            --scanline-color: rgba(0, 0, 0, 0.5);
+            --neon-cyan: #00f3ff;
+            --neon-magenta: #ff00ff;
+            --neon-green: #39ff14;
+            --neon-amber: #ffbf00;
+        }
+
+        html, body {
+            background-color: var(--bg-color);
+            color: #e0e0e0;
+            font-family: 'JetBrains Mono', monospace;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* CRT Scanline Effect */
+        body::before {
+            content: ' ';
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        /* Improved Glass Panel */
+        .glass-panel {
+            background: rgba(16, 20, 30, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(0, 243, 255, 0.15);
+            border-top: 1px solid rgba(0, 243, 255, 0.3);
+            border-radius: 12px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(0, 243, 255, 0.05);
+        }
+        
+        .active-tab {
+            background: rgba(0, 243, 255, 0.15);
+            border-color: var(--neon-cyan);
+            color: #fff;
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.3);
+        }
+
+        /* Neon Text Utilities */
+        .text-neon-cyan { color: var(--neon-cyan); text-shadow: 0 0 8px var(--neon-cyan); }
+        .text-neon-magenta { color: var(--neon-magenta); text-shadow: 0 0 8px var(--neon-magenta); }
+        .text-neon-green { color: var(--neon-green); text-shadow: 0 0 8px var(--neon-green); }
+        .text-neon-amber { color: var(--neon-amber); text-shadow: 0 0 8px var(--neon-amber); }
+        
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px; width: 16px;
+            border-radius: 50%;
+            background: var(--neon-cyan);
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+        }
+
+        /* Transition for Vue */
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="app" class="h-screen w-screen p-2 md:p-4 flex flex-col gap-4" v-cloak>
+    <!-- Header -->
+    <header class="glass-panel flex justify-between items-center px-6 py-4 shrink-0 z-10">
+        <div class="flex items-center gap-3">
+            <div class="w-3 h-3 bg-cyan-400 rounded-full animate-pulse shadow-[0_0_10px_#00f3ff]"></div>
+            <h1 class="text-xl md:text-2xl font-bold text-neon-cyan tracking-widest font-mono">GLASS-BOX <span class="text-xs text-gray-400 align-top">v2.0</span></h1>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <div class="hidden md:flex items-center gap-2 bg-black/40 px-3 py-1 rounded-full border border-white/10">
+                <span class="text-xs text-cyan-300">2D VIEW</span>
+                <button @click="is3DMode = !is3DMode" class="relative inline-flex items-center h-5 rounded-full w-10 transition-colors duration-300 focus:outline-none" :class="is3DMode ? 'bg-fuchsia-600/80' : 'bg-cyan-600/80'">
+                    <span :class="is3DMode ? 'translate-x-5' : 'translate-x-1'" class="inline-block w-3 h-3 transform bg-white rounded-full transition-transform duration-300 shadow-md"></span>
+                </button>
+                <span class="text-xs text-fuchsia-300">VR VIEW</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow flex flex-col md:flex-row gap-4 min-h-0 relative z-10">
+        <!-- Left Panel: Visualization (Main Stage) -->
+        <div class="glass-panel flex-grow md:w-3/4 p-1 flex flex-col relative overflow-hidden group">
+            
+            <!-- Tab Navigation (Floating) -->
+            <nav class="absolute top-4 left-4 z-20 flex flex-wrap gap-2">
+                <button v-for="tab in tabs" :key="tab.id" @click="changeTab(tab.id)" 
+                        class="px-3 py-1.5 text-xs font-bold rounded border backdrop-blur-sm transition-all duration-300"
+                        :class="activeTab === tab.id ? 'active-tab' : 'bg-black/40 border-gray-700 text-gray-500 hover:text-gray-200 hover:border-gray-500'">
+                    {{ tab.name }}
+                </button>
+            </nav>
+
+            <!-- 2D Visualization Container -->
+            <transition name="fade" mode="out-in">
+                <div v-if="!is3DMode" :key="activeTab" class="w-full h-full flex items-center justify-center p-4">
+                    
+                    <!-- Q-Learning 2D -->
+                    <div v-if="activeTab === 'q-learning'" class="relative">
+                        <div class="grid gap-1 bg-gray-900/50 p-2 rounded-lg border border-cyan-500/30" :style="{ gridTemplateColumns: `repeat(${qLearning.gridSize}, minmax(0, 1fr))` }">
+                            <div v-for="(cell, index) in qLearning.grid" :key="index" 
+                                 class="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center relative transition-colors duration-200"
+                                 :class="{
+                                     'bg-gray-800/50': cell === 0,
+                                     'bg-slate-700 border border-slate-500 shadow-inner': cell === 1, // Wall
+                                     'bg-amber-500/20 border border-amber-500 shadow-[0_0_10px_inset_rgba(245,158,11,0.3)]': cell === 2, // Goal
+                                     'bg-red-900/40 border border-red-800': cell === 3, // Pit
+                                 }">
+                                <!-- Heatmap Overlay -->
+                                <div v-if="cell === 0" class="absolute inset-0 opacity-20 bg-cyan-400" 
+                                     :style="{ opacity: getQValueIntensity(index) }"></div>
+                                
+                                <!-- Agent -->
+                                <div v-if="qLearning.agentPos.x === (index % qLearning.gridSize) && qLearning.agentPos.y === Math.floor(index / qLearning.gridSize)"
+                                     class="w-3/4 h-3/4 rounded-full bg-cyan-400 shadow-[0_0_15px_var(--neon-cyan)] z-10 animate-bounce"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dijkstra 2D -->
+                    <svg v-if="activeTab === 'dijkstra'" :viewBox="`0 0 ${dijkstra.svgSize.width} ${dijkstra.svgSize.height}`" class="w-full h-full max-w-4xl bg-gray-900/30 rounded-lg border border-gray-800">
+                        <defs>
+                            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="2" result="blur" />
+                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                            </filter>
+                        </defs>
+                        <line v-for="edge in dijkstra.edges" :key="`${edge.source.id}-${edge.target.id}`"
+                              :x1="edge.source.x" :y1="edge.source.y" :x2="edge.target.x" :y2="edge.target.y"
+                              :class="{'stroke-amber-400 stroke-[3] opacity-100': isPathEdge(edge), 'stroke-gray-700 stroke-1 opacity-40': !isPathEdge(edge)}" />
+                        <circle v-for="node in dijkstra.nodes" :key="node.id"
+                                :cx="node.x" :cy="node.y" r="12"
+                                :class="{
+                                    'fill-cyan-500 filter drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]': node.id === dijkstra.startNode || node.id === dijkstra.endNode,
+                                    'fill-gray-800 stroke-gray-600': !dijkstra.visited.has(node.id) && !dijkstra.frontier.some(f => f.node === node.id),
+                                    'fill-fuchsia-600 animate-pulse': dijkstra.frontier.some(f => f.node === node.id),
+                                    'fill-green-900 stroke-green-500': dijkstra.visited.has(node.id) && node.id !== dijkstra.startNode && node.id !== dijkstra.endNode,
+                                }"
+                                class="stroke-2 transition-all duration-300" />
+                        <text v-for="node in dijkstra.nodes" :key="`text-${node.id}`"
+                              :x="node.x" :y="node.y" dy="4" text-anchor="middle" class="fill-white text-[10px] font-mono pointer-events-none">{{ node.id }}</text>
+                    </svg>
+
+                    <!-- Sorting Race 2D -->
+                    <div v-if="activeTab === 'sorting'" class="w-full h-full flex flex-col md:flex-row justify-around items-end gap-8 p-4 md:p-10">
+                        <div v-for="algo in sorting.algorithms" :key="algo.name" class="w-full md:w-1/2 h-full flex flex-col bg-black/20 rounded-xl p-4 border border-white/5">
+                            <h3 class="text-center text-sm md:text-lg text-neon-magenta mb-4 tracking-wider border-b border-white/10 pb-2">{{ algo.name }}</h3>
+                            <div class="flex-grow flex items-end justify-center gap-px relative">
+                                <div v-for="(val, index) in algo.data" :key="index"
+                                     class="flex-1 transition-all duration-75 rounded-t-sm"
+                                     :style="{ height: `${val}%`, background: getBarColor(algo, index) }">
+                                </div>
+                                <div class="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
+                            </div>
+                            <div class="flex justify-between text-[10px] md:text-xs font-mono mt-3 text-gray-400">
+                                <span>CMP: <span class="text-white">{{ algo.comparisons }}</span></span>
+                                <span>SWP: <span class="text-white">{{ algo.swaps }}</span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Monte Carlo 2D -->
+                    <div v-if="activeTab === 'monte-carlo'" class="w-full h-full flex flex-col md:flex-row gap-6 p-4 items-center">
+                        <div class="w-full md:w-1/2 aspect-square relative border border-cyan-500/30 rounded-xl bg-black/40 shadow-[0_0_20px_rgba(0,243,255,0.1)] overflow-hidden">
+                            <svg viewBox="0 0 100 100" class="w-full h-full">
+                                <rect x="0" y="0" width="100" height="100" fill="transparent" />
+                                <circle cx="50" cy="50" r="50" fill="rgba(0, 243, 255, 0.05)" stroke="rgba(0, 243, 255, 0.3)" stroke-width="0.5" />
+                                <circle v-for="(p, i) in monteCarlo.points" :key="i"
+                                        :cx="p.x * 100" :cy="p.y * 100" r="0.8"
+                                        :fill="p.inCircle ? '#00f3ff' : '#ff00ff'" class="opacity-80" />
+                            </svg>
+                        </div>
+                        <div class="w-full md:w-1/2 h-64 md:h-full flex flex-col">
+                            <h3 class="text-left text-sm text-neon-amber mb-2 border-l-2 border-amber-500 pl-2">REAL-TIME CONVERGENCE</h3>
+                            <div class="flex-grow border border-white/10 bg-black/40 rounded-lg p-4 relative overflow-hidden">
+                                 <!-- Grid Lines -->
+                                 <div class="absolute inset-0" style="background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px); background-size: 100% 25%;"></div>
+                                 <svg :viewBox="`0 0 100 ${monteCarlo.chartHeight}`" class="w-full h-full relative z-10" preserveAspectRatio="none">
+                                    <path :d="piHistoryPath" stroke="var(--neon-amber)" fill="none" stroke-width="0.8" vector-effect="non-scaling-stroke" />
+                                    <line x1="0" :y1="piLineY" x2="100" :y2="piLineY" stroke="var(--neon-green)" stroke-width="0.5" stroke-dasharray="2 1" vector-effect="non-scaling-stroke" />
+                                </svg>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4 mt-4 text-xs font-mono">
+                                <div class="bg-white/5 p-2 rounded border-l-2 border-cyan-500">
+                                    <div class="text-gray-500">SAMPLES</div>
+                                    <div class="text-lg text-white">{{ monteCarlo.totalPoints.toLocaleString() }}</div>
+                                </div>
+                                <div class="bg-white/5 p-2 rounded border-l-2 border-amber-500">
+                                    <div class="text-gray-500">ESTIMATED π</div>
+                                    <div class="text-lg text-neon-amber">{{ monteCarlo.piEstimate.toFixed(7) }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </transition>
+
+            <!-- 3D Visualization (A-Frame) -->
+            <div v-if="is3DMode" class="w-full h-full absolute inset-0 z-0">
+                <a-scene embedded vr-mode-ui="enabled: false" cursor="rayOrigin: mouse" background="color: #050505" renderer="antialias: true; colorManagement: true;">
+                    <!-- Cyberpunk Environment -->
+                    <a-entity id="rig" position="0 8 18" rotation="-20 0 0">
+                        <a-camera look-controls wasd-controls="fly: true; acceleration: 50"></a-camera>
+                    </a-entity>
+                    
+                    <a-grid id="floor" width="100" height="100" src="" color="#00f3ff" opacity="0.1" position="0 -1 0"></a-grid>
+                    <a-sky color="#020205"></a-sky>
+                    
+                    <!-- Lights -->
+                    <a-entity light="type: ambient; color: #222; intensity: 0.5"></a-entity>
+                    <a-entity light="type: point; color: #00f3ff; intensity: 0.8; distance: 50" position="10 10 10"></a-entity>
+                    <a-entity light="type: point; color: #ff00ff; intensity: 0.8; distance: 50" position="-10 5 -10"></a-entity>
+
+                    <!-- Q-Learning 3D -->
+                    <a-entity v-if="activeTab === 'q-learning'" position="-5 0 -5">
+                        <template v-for="(cell, index) in qLearning.grid">
+                            <!-- Floor Tiles -->
+                            <a-box :position="`${index % qLearning.gridSize} -0.1 ${Math.floor(index / qLearning.gridSize)}`"
+                                   width="0.95" height="0.1" depth="0.95"
+                                   :color="cell === 3 ? '#500' : (cell === 2 ? '#550' : '#111')"
+                                   :opacity="0.8" roughness="0.5"></a-box>
+                                   
+                            <!-- Wall -->
+                            <a-box v-if="cell === 1" :key="`wall-${index}`"
+                                   :position="`${index % qLearning.gridSize} 0.5 ${Math.floor(index / qLearning.gridSize)}`"
+                                   depth="0.95" height="1" width="0.95" 
+                                   color="#1f2937" 
+                                   material="opacity: 0.8; transparent: true; border: 1px solid #00f3ff"
+                                   wireframe="false">
+                                   <a-entity geometry="primitive: box; width: 0.95; height: 1; depth: 0.95" material="wireframe: true; color: #00f3ff"></a-entity>
+                            </a-box>
+                            
+                            <!-- Goal -->
+                            <a-cylinder v-if="cell === 2" :key="`goal-${index}`"
+                                   :position="`${index % qLearning.gridSize} 0.5 ${Math.floor(index / qLearning.gridSize)}`"
+                                   radius="0.4" height="1" color="#ffbf00" 
+                                   material="opacity: 0.7; transparent: true; emissive: #ffbf00; emissiveIntensity: 0.4"
+                                   animation="property: rotation; to: 0 360 0; loop: true; dur: 5000; easing: linear"></a-cylinder>
+                        </template>
+                        
+                        <!-- Agent -->
+                        <a-sphere :position="`${qLearning.agentPos.x} 0.5 ${qLearning.agentPos.y}`"
+                                  radius="0.3" color="#00f3ff" 
+                                  material="emissive: #00f3ff; emissiveIntensity: 0.8"
+                                  animation="property: position; dur: 200; easing: easeInOutQuad">
+                            <a-light type="point" color="#00f3ff" intensity="1" distance="3" decay="2"></a-light>
+                        </a-sphere>
+                    </a-entity>
+
+                    <!-- Dijkstra 3D -->
+                    <a-entity v-if="activeTab === 'dijkstra'" position="0 2 -10" scale="0.2 0.2 0.2">
+                        <a-entity v-for="edge in dijkstra.edges" :key="`3d-edge-${edge.source.id}-${edge.target.id}`"
+                                  :line="`start: ${edge.source.x-400} ${edge.source.y-300} 0; end: ${edge.target.x-400} ${edge.target.y-300} 0; color: ${isPathEdge(edge) ? '#ffbf00' : '#333'}; opacity: ${isPathEdge(edge) ? 1 : 0.5}`"></a-entity>
+                        
+                        <template v-for="node in dijkstra.nodes" :key="`3d-node-${node.id}`">
+                            <a-sphere :position="`${node.x-400} ${node.y-300} 0`" :radius="isNodeActive(node) ? 10 : 6"
+                                      :color="getNodeColor3D(node)"
+                                      :material="`emissive: ${getNodeColor3D(node)}; emissiveIntensity: 0.5`">
+                            </a-sphere>
+                        </template>
+                    </a-entity>
+
+                    <!-- Sorting Race 3D -->
+                    <a-entity v-if="activeTab === 'sorting'" position="0 0 -5">
+                        <a-entity position="-6 0 0">
+                            <a-text value="Quicksort" position="0 6 0" align="center" color="#ff00ff" side="double"></a-text>
+                            <a-box v-for="(val, index) in sorting.algorithms[0].data" :key="`qs-${index}`"
+                                   :position="`${(index - 25) * 0.2} ${val/40} 0`"
+                                   :height="val/20" width="0.15" depth="0.15"
+                                   :color="getBarColor(sorting.algorithms[0], index)"></a-box>
+                        </a-entity>
+                        <a-entity position="6 0 0">
+                            <a-text value="Bubble Sort" position="0 6 0" align="center" color="#ff00ff" side="double"></a-text>
+                            <a-box v-for="(val, index) in sorting.algorithms[1].data" :key="`bs-${index}`"
+                                   :position="`${(index - 25) * 0.2} ${val/40} 0`"
+                                   :height="val/20" width="0.15" depth="0.15"
+                                   :color="getBarColor(sorting.algorithms[1], index)"></a-box>
+                        </a-entity>
+                    </a-entity>
+                    
+                    <!-- Monte Carlo 3D -->
+                    <a-entity v-if="activeTab === 'monte-carlo'" position="0 2 -5">
+                        <a-cylinder radius="5" height="0.05" position="0 0 0" color="#00f3ff" 
+                                    material="opacity: 0.1; transparent: true; side: double" rotation="0 0 0"></a-cylinder>
+                        <a-box width="10" height="0.02" depth="10" position="0 -0.05 0" color="#333" material="opacity: 0.5; transparent: true"></a-box>
+                        
+                        <!-- Optimize 3D points rendering: Only show last 200 to prevent lag -->
+                        <a-box v-for="(p, i) in monteCarlo.points.slice(-200)" :key="`3d-p-${i}`"
+                                  :position="`${p.x*10-5} ${i*0.01} ${p.y*10-5}`"
+                                  width="0.08" height="0.08" depth="0.08"
+                                  :color="p.inCircle ? '#00f3ff' : '#ff00ff'"></a-box>
+                        
+                        <a-text :value="`PI: ${monteCarlo.piEstimate.toFixed(5)}`" position="0 6 0" align="center" color="#ffbf00" scale="2 2 2"></a-text>
+                    </a-entity>
+                </a-scene>
+            </div>
+        </div>
+
+        <!-- Right Panel: Controls & Logs (Sidebar) -->
+        <div class="glass-panel w-full md:w-80 flex-shrink-0 p-4 flex flex-col gap-4 max-h-[40vh] md:max-h-full">
+            <!-- Controls -->
+            <div class="flex-shrink-0 space-y-4">
+                <div class="flex items-center gap-2 border-b border-white/10 pb-2">
+                    <span class="w-2 h-2 rounded-full" :class="isRunning ? 'bg-green-500 shadow-[0_0_8px_#0f0]' : 'bg-red-500'"></span>
+                    <h2 class="text-sm font-bold text-gray-300">SYSTEM CONTROL</h2>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <button @click="startSimulation" :disabled="isRunning" 
+                            class="py-2 text-xs font-bold rounded bg-green-900/40 border border-green-500/50 text-green-400 hover:bg-green-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                        INITIATE
+                    </button>
+                    <button @click="stopSimulation" :disabled="!isRunning" 
+                            class="py-2 text-xs font-bold rounded bg-red-900/40 border border-red-500/50 text-red-400 hover:bg-red-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                        HALT
+                    </button>
+                    <button @click="resetSimulation" 
+                            class="col-span-2 py-2 text-xs font-bold rounded bg-amber-900/40 border border-amber-500/50 text-amber-400 hover:bg-amber-500/20 transition-all">
+                        SYSTEM RESET
+                    </button>
+                </div>
+
+                <!-- Global Speed Control -->
+                <div class="space-y-1 pt-2">
+                    <div class="flex justify-between text-xs text-gray-400">
+                        <span>CLOCK SPEED</span>
+                        <span>{{ speedMultiplier }}x</span>
+                    </div>
+                    <input type="range" min="1" max="20" v-model.number="speedMultiplier" class="w-full">
+                </div>
+
+                <!-- Algorithm Specific Controls -->
+                <div class="bg-black/30 rounded p-3 text-xs space-y-2 border border-white/5">
+                    <h3 class="text-neon-cyan font-bold mb-2 uppercase">{{ activeTab }} CONFIG</h3>
+                    
+                    <div v-if="activeTab === 'q-learning'" class="space-y-1 text-gray-400">
+                        <div class="flex justify-between"><span>Epsilon:</span> <span class="text-white">{{ qLearning.epsilon.toFixed(3) }}</span></div>
+                        <div class="flex justify-between"><span>Episode:</span> <span class="text-white">{{ qLearning.episode }}</span></div>
+                    </div>
+                    
+                    <div v-if="activeTab === 'dijkstra'" class="space-y-2">
+                        <button @click="stepSimulation" :disabled="isRunning || dijkstra.isFinished" class="w-full py-1 rounded bg-cyan-900/50 border border-cyan-500/30 text-cyan-300 disabled:opacity-30">
+                            SINGLE STEP
+                        </button>
+                        <div class="flex justify-between text-gray-400"><span>Status:</span> <span :class="dijkstra.isFinished ? 'text-green-400' : 'text-yellow-400'">{{ dijkstra.isFinished ? 'COMPLETE' : 'SEARCHING' }}</span></div>
+                    </div>
+                    
+                    <div v-if="activeTab === 'sorting'" class="space-y-1">
+                        <div class="flex justify-between text-gray-400"><span>Array Size</span> <span>{{ sorting.arraySize }}</span></div>
+                        <input type="range" min="10" max="100" step="10" v-model.number="sorting.arraySize" @change="resetSimulation" class="w-full">
+                    </div>
+
+                    <div v-if="activeTab === 'monte-carlo'" class="text-gray-400">
+                        Accuracy increases with samples.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs -->
+            <div class="flex-grow flex flex-col min-h-0 border-t border-white/10 pt-4">
+                <h2 class="text-xs font-bold text-gray-500 mb-2 flex items-center gap-2">
+                    <span class="text-neon-amber">>></span> KERNEL LOG
+                </h2>
+                <div class="flex-grow bg-black/60 rounded border border-white/5 p-2 overflow-y-auto font-mono text-[10px] md:text-xs custom-scrollbar" ref="logContainer">
+                    <div v-for="(log, index) in logs" :key="index" class="mb-1 break-all transition-opacity duration-500"
+                         :class="{
+                             'text-red-400': log.type === 'error',
+                             'text-amber-400': log.type === 'warning',
+                             'text-cyan-400': log.type === 'info',
+                             'text-gray-500': log.type === 'system'
+                         }">
+                        <span class="opacity-50 mr-1">[{{ log.timestamp }}]</span>
+                        <span>{{ log.message }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+const { createApp, ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } = Vue;
+
+createApp({
+    setup() {
+        // --- Core State ---
+        const activeTab = ref('q-learning');
+        const is3DMode = ref(false);
+        const isRunning = ref(false);
+        const animationFrameId = ref(null);
+        const speedMultiplier = ref(5); // Speed control
+        const logs = reactive([]);
+        const logContainer = ref(null);
+        const frameCount = ref(0);
+
+        const tabs = [
+            { id: 'q-learning', name: 'Q-LEARNING' },
+            { id: 'dijkstra', name: 'DIJKSTRA' },
+            { id: 'sorting', name: 'SORT RACE' },
+            { id: 'monte-carlo', name: 'MONTE CARLO' },
+        ];
+
+        // --- Logging Utility ---
+        const addLog = (message, type = 'system') => {
+            const now = new Date();
+            const timestamp = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+            logs.unshift({ timestamp, message, type });
+            if (logs.length > 50) logs.pop();
+        };
+
+        // --- Q-Learning Module ---
+        const qLearning = reactive({
+            gridSize: 10,
+            grid: [],
+            agentPos: { x: 1, y: 1 },
+            qTable: {},
+            alpha: 0.1, gamma: 0.9, epsilon: 0.9, episode: 0,
+            actions: ['up', 'down', 'left', 'right'],
+        });
+
+        const initQLearning = () => {
+            qLearning.grid = Array(qLearning.gridSize * qLearning.gridSize).fill(0);
+            qLearning.qTable = {};
+            qLearning.agentPos = { x: 1, y: 1 };
+            qLearning.episode = 0;
+            qLearning.epsilon = 0.9;
+
+            // Generate Maze-like structure
+            const walls = [
+                3,4,5,6, 13,23,33, 55,56,57,58, 72,82,92,
+                18,28,38,48, 75,76,77, 95
+            ];
+            const pits = [25, 62, 85];
+            const goal = 99;
+
+            walls.forEach(i => qLearning.grid[i] = 1);
+            pits.forEach(i => qLearning.grid[i] = 3);
+            qLearning.grid[goal] = 2;
+
+            for (let y = 0; y < qLearning.gridSize; y++) {
+                for (let x = 0; x < qLearning.gridSize; x++) {
+                    qLearning.qTable[`${x},${y}`] = { up: 0, down: 0, left: 0, right: 0 };
+                }
+            }
+            addLog('RL Environment Initialized.', 'info');
+        };
+
+        const getQValueIntensity = (index) => {
+            const x = index % qLearning.gridSize;
+            const y = Math.floor(index / qLearning.gridSize);
+            const state = `${x},${y}`;
+            if (!qLearning.qTable[state]) return 0;
+            const maxQ = Math.max(...Object.values(qLearning.qTable[state]));
+            // Normalize for visual heatmap (0 to 1)
+            return Math.min(Math.max(maxQ / 50, 0), 1); 
+        };
+
+        const runQLearningStep = () => {
+            const state = `${qLearning.agentPos.x},${qLearning.agentPos.y}`;
+            let action;
+            // Epsilon-Greedy
+            if (Math.random() < qLearning.epsilon) {
+                action = qLearning.actions[Math.floor(Math.random() * qLearning.actions.length)];
+            } else {
+                const qValues = qLearning.qTable[state];
+                action = Object.keys(qValues).reduce((a, b) => qValues[a] > qValues[b] ? a : b);
+            }
+
+            const oldPos = { ...qLearning.agentPos };
+            let newPos = { ...oldPos };
+            if (action === 'up') newPos.y--;
+            if (action === 'down') newPos.y++;
+            if (action === 'left') newPos.x--;
+            if (action === 'right') newPos.x++;
+
+            let reward = -1; 
+            let episodeEnd = false;
+
+            // Boundary & Wall check
+            if (newPos.x < 0 || newPos.x >= qLearning.gridSize || newPos.y < 0 || newPos.y >= qLearning.gridSize || qLearning.grid[newPos.y * qLearning.gridSize + newPos.x] === 1) {
+                reward = -5; 
+                newPos = oldPos; // Stay put
+            }
+
+            const newCell = qLearning.grid[newPos.y * qLearning.gridSize + newPos.x];
+            if (newCell === 2) { // Goal
+                reward = 100;
+                episodeEnd = true;
+                addLog(`Goal Reached! Episode ${qLearning.episode} Complete.`, 'info');
+            } else if (newCell === 3) { // Pit
+                reward = -50;
+                episodeEnd = true;
+                addLog('Agent fell into a pit.', 'error');
+            }
+
+            // Bellman Update
+            const newState = `${newPos.x},${newPos.y}`;
+            const oldQ = qLearning.qTable[state][action];
+            const maxFutureQ = Math.max(...Object.values(qLearning.qTable[newState]));
+            const newQ = oldQ + qLearning.alpha * (reward + qLearning.gamma * maxFutureQ - oldQ);
+            qLearning.qTable[state][action] = newQ;
+
+            qLearning.agentPos = newPos;
+
+            if (episodeEnd) {
+                qLearning.agentPos = { x: 1, y: 1 };
+                qLearning.episode++;
+                qLearning.epsilon = Math.max(0.01, qLearning.epsilon * 0.99); 
+            }
+        };
+
+        // --- Dijkstra Module ---
+        const dijkstra = reactive({
+            nodes: [], edges: [], svgSize: { width: 800, height: 600 },
+            startNode: 0, endNode: 0, frontier: [], visited: new Set(),
+            path: [], isFinished: false, distances: {}, previous: {},
+        });
+
+        const initDijkstra = () => {
+            dijkstra.nodes = []; dijkstra.edges = []; dijkstra.path = []; dijkstra.isFinished = false;
+            dijkstra.visited = new Set(); dijkstra.frontier = [];
+            const numNodes = 25;
+            
+            // Layout nodes nicely (semi-random but spread out)
+            for (let i = 0; i < numNodes; i++) {
+                let x, y, tooClose;
+                do {
+                    tooClose = false;
+                    x = Math.random() * (dijkstra.svgSize.width - 100) + 50;
+                    y = Math.random() * (dijkstra.svgSize.height - 100) + 50;
+                    for (let n of dijkstra.nodes) {
+                        if (Math.hypot(n.x - x, n.y - y) < 80) tooClose = true;
+                    }
+                } while(tooClose);
+                dijkstra.nodes.push({ id: i, x, y });
+            }
+
+            // Connect nodes (Ensure graph connectivity closer to MST + random edges)
+            for (let i = 0; i < numNodes; i++) {
+                // Connect to 2 nearest neighbors to ensure cluster connectivity
+                const others = dijkstra.nodes.filter(n => n.id !== i).map(n => ({
+                    id: n.id, dist: Math.hypot(dijkstra.nodes[i].x - n.x, dijkstra.nodes[i].y - n.y)
+                })).sort((a,b) => a.dist - b.dist);
+
+                others.slice(0, 2).forEach(target => {
+                    const exists = dijkstra.edges.some(e => 
+                        (e.source.id === i && e.target.id === target.id) || 
+                        (e.source.id === target.id && e.target.id === i)
+                    );
+                    if (!exists) {
+                        dijkstra.edges.push({ 
+                            source: dijkstra.nodes[i], target: dijkstra.nodes.find(n => n.id === target.id), 
+                            weight: target.dist 
+                        });
+                    }
+                });
+            }
+            
+            dijkstra.startNode = 0;
+            // Pick furthest node as endNode
+            let maxDist = 0;
+            let furthestNode = 0;
+            dijkstra.nodes.forEach(n => {
+                const d = Math.hypot(n.x - dijkstra.nodes[0].x, n.y - dijkstra.nodes[0].y);
+                if (d > maxDist) { maxDist = d; furthestNode = n.id; }
+            });
+            dijkstra.endNode = furthestNode;
+
+            dijkstra.nodes.forEach(node => {
+                dijkstra.distances[node.id] = Infinity;
+                dijkstra.previous[node.id] = null;
+            });
+            dijkstra.distances[dijkstra.startNode] = 0;
+            dijkstra.frontier.push({ node: dijkstra.startNode, distance: 0 });
+            addLog(`Graph Generated. Start: ${dijkstra.startNode}, End: ${dijkstra.endNode}`, 'info');
+        };
+
+        const runDijkstraStep = () => {
+            if (dijkstra.frontier.length === 0 || dijkstra.isFinished) {
+                if (!dijkstra.isFinished) addLog('No path found.', 'error');
+                dijkstra.isFinished = true;
+                return;
+            }
+
+            dijkstra.frontier.sort((a, b) => a.distance - b.distance);
+            const { node: u } = dijkstra.frontier.shift();
+
+            if (u === dijkstra.endNode) {
+                dijkstra.isFinished = true;
+                let current = dijkstra.endNode;
+                while (current !== null) {
+                    dijkstra.path.unshift(current);
+                    current = dijkstra.previous[current];
+                }
+                addLog(`Shortest Path Found. Cost: ${dijkstra.distances[dijkstra.endNode].toFixed(0)}`, 'info');
+                return;
+            }
+
+            if (dijkstra.visited.has(u)) return;
+            dijkstra.visited.add(u);
+
+            const neighbors = dijkstra.edges.filter(e => e.source.id === u || e.target.id === u);
+            neighbors.forEach(edge => {
+                const v = edge.source.id === u ? edge.target.id : edge.source.id;
+                if (!dijkstra.visited.has(v)) {
+                    const alt = dijkstra.distances[u] + edge.weight;
+                    if (alt < dijkstra.distances[v]) {
+                        dijkstra.distances[v] = alt;
+                        dijkstra.previous[v] = u;
+                        dijkstra.frontier.push({ node: v, distance: alt });
+                    }
+                }
+            });
+        };
+
+        const isPathEdge = (edge) => {
+            for (let i = 0; i < dijkstra.path.length - 1; i++) {
+                if ((dijkstra.path[i] === edge.source.id && dijkstra.path[i+1] === edge.target.id) ||
+                    (dijkstra.path[i] === edge.target.id && dijkstra.path[i+1] === edge.source.id)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        const isNodeActive = (node) => dijkstra.frontier.some(f => f.node === node.id) || dijkstra.path.includes(node.id);
+        const getNodeColor3D = (node) => {
+            if (node.id === dijkstra.startNode || node.id === dijkstra.endNode) return '#00f3ff';
+            if (dijkstra.path.includes(node.id)) return '#ffbf00';
+            if (dijkstra.frontier.some(f => f.node === node.id)) return '#ff00ff';
+            if (dijkstra.visited.has(node.id)) return '#333';
+            return '#222';
+        };
+
+        // --- Sorting Race Module ---
+        const sorting = reactive({
+            arraySize: 50,
+            algorithms: [
+                { name: 'Quick Sort', data: [], comparisons: 0, swaps: 0, activeIndices: [], gen: null },
+                { name: 'Bubble Sort', data: [], comparisons: 0, swaps: 0, activeIndices: [], gen: null },
+            ],
+        });
+
+        const initSorting = () => {
+            const baseArray = Array.from({ length: sorting.arraySize }, (_, i) => (i + 1) * (100 / sorting.arraySize));
+            // Shuffle
+            for (let i = baseArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [baseArray[i], baseArray[j]] = [baseArray[j], baseArray[i]];
+            }
+            sorting.algorithms.forEach(algo => {
+                algo.data = [...baseArray];
+                algo.comparisons = 0; algo.swaps = 0; algo.activeIndices = [];
+                if (algo.name === 'Quick Sort') algo.gen = quickSortGen(algo, 0, algo.data.length - 1);
+                if (algo.name === 'Bubble Sort') algo.gen = bubbleSortGen(algo);
+            });
+            addLog(`Sorting initialized with ${sorting.arraySize} elements.`, 'info');
+        };
+
+        function* bubbleSortGen(algo) {
+            let n = algo.data.length;
+            let swapped;
+            do {
+                swapped = false;
+                for (let i = 0; i < n - 1; i++) {
+                    algo.activeIndices = [i, i + 1];
+                    algo.comparisons++;
+                    yield; // Visualization pause
+                    if (algo.data[i] > algo.data[i + 1]) {
+                        [algo.data[i], algo.data[i + 1]] = [algo.data[i + 1], algo.data[i]];
+                        swapped = true;
+                        algo.swaps++;
+                        yield; // Swap pause
+                    }
+                }
+                n--;
+            } while (swapped);
+            algo.activeIndices = [];
+        }
+
+        function* quickSortGen(algo, low, high) {
+            if (low < high) {
+                const partitionGenerator = partition(algo, low, high);
+                let result = partitionGenerator.next();
+                while (!result.done) {
+                    yield;
+                    result = partitionGenerator.next();
+                }
+                const pi = result.value;
+                yield* quickSortGen(algo, low, pi - 1);
+                yield* quickSortGen(algo, pi + 1, high);
+            }
+        }
+
+        function* partition(algo, low, high) {
+            const pivot = algo.data[high];
+            let i = low - 1;
+            for (let j = low; j < high; j++) {
+                algo.activeIndices = [j, high];
+                algo.comparisons++;
+                yield;
+                if (algo.data[j] < pivot) {
+                    i++;
+                    [algo.data[i], algo.data[j]] = [algo.data[j], algo.data[i]];
+                    algo.swaps++;
+                    yield;
+                }
+            }
+            [algo.data[i + 1], algo.data[high]] = [algo.data[high], algo.data[i + 1]];
+            algo.swaps++;
+            yield;
+            return i + 1;
+        }
+
+        const runSortingStep = () => {
+            let finishedCount = 0;
+            sorting.algorithms.forEach(algo => {
+                if (algo.gen) {
+                    const result = algo.gen.next();
+                    if (result.done) {
+                        algo.gen = null;
+                        finishedCount++;
+                    }
+                } else {
+                    finishedCount++;
+                }
+            });
+            if (finishedCount === sorting.algorithms.length) {
+                stopSimulation();
+                addLog('All algorithms sorted successfully.', 'info');
+            }
+        };
+        
+        const getBarColor = (algo, index) => {
+            if (algo.activeIndices.includes(index)) return 'var(--neon-magenta)'; // Active
+            if (!algo.gen) return 'var(--neon-green)'; // Sorted
+            return 'var(--neon-cyan)'; // Normal
+        };
+
+        // --- Monte Carlo Module (Fixing Reactivity Issue) ---
+        const monteCarlo = reactive({
+            points: [], totalPoints: 0, pointsInCircle: 0, piEstimate: 0, 
+            piHistory: [], chartHeight: 50,
+        });
+
+        const initMonteCarlo = () => {
+            monteCarlo.points = []; monteCarlo.totalPoints = 0; monteCarlo.pointsInCircle = 0;
+            monteCarlo.piEstimate = 0; monteCarlo.piHistory = [];
+            addLog('Monte Carlo Simulation Reset.', 'info');
+        };
+
+        const runMonteCarloStep = () => {
+            // Batch process for performance
+            for (let i = 0; i < 50; i++) {
+                const x = Math.random();
+                const y = Math.random();
+                const inCircle = x * x + y * y <= 1;
+                // Limit stored points to prevent memory leak/lag
+                if (monteCarlo.points.length >= 2000) monteCarlo.points.shift();
+                monteCarlo.points.push({ x, y, inCircle });
+                
+                monteCarlo.totalPoints++;
+                if (inCircle) monteCarlo.pointsInCircle++;
+            }
+            monteCarlo.piEstimate = 4 * (monteCarlo.pointsInCircle / monteCarlo.totalPoints);
+            
+            // Only update history occasionally to keep chart smooth
+            if (monteCarlo.totalPoints % 50 === 0) {
+                monteCarlo.piHistory.push(monteCarlo.piEstimate);
+                if (monteCarlo.piHistory.length > 200) monteCarlo.piHistory.shift();
+            }
+        };
+        
+        // Computed properties separated from reactive object to maintain reactivity
+        const piHistoryPath = computed(() => {
+            if (monteCarlo.piHistory.length < 2) return '';
+            const h = monteCarlo.chartHeight;
+            // Map values dynamically around 3.14 to show convergence zoom
+            const points = monteCarlo.piHistory.map((val, i) => {
+                const x = (i / (monteCarlo.piHistory.length - 1)) * 100;
+                // Zoom in effect: 3.0 to 3.3 range
+                let normalizedY = (val - 3.0) / 0.3; 
+                normalizedY = Math.max(0, Math.min(1, normalizedY));
+                const y = h - (normalizedY * h);
+                return `${x},${y}`;
+            });
+            return `M ${points.join(' L ')}`;
+        });
+        
+        const piLineY = computed(() => {
+            const h = monteCarlo.chartHeight;
+            let normalizedY = (Math.PI - 3.0) / 0.3;
+            normalizedY = Math.max(0, Math.min(1, normalizedY));
+            return h - (normalizedY * h);
+        });
+
+        // --- Global Loop ---
+        const simulationLoop = () => {
+            if (!isRunning.value) return;
+            
+            frameCount.value++;
+            // Basic throttling for speed control
+            // High speedMultiplier = execute more often or multiple times per frame
+            const operationsPerFrame = Math.ceil(speedMultiplier.value / 2);
+            
+            for(let i=0; i<operationsPerFrame; i++) {
+                // For sorting, we need to slow down when speed is low
+                if (activeTab.value === 'sorting' && speedMultiplier.value < 5 && frameCount.value % (5 - speedMultiplier.value) !== 0) continue;
+
+                switch (activeTab.value) {
+                    case 'q-learning': runQLearningStep(); break;
+                    case 'sorting': runSortingStep(); break;
+                    case 'monte-carlo': runMonteCarloStep(); break;
+                }
+            }
+            
+            animationFrameId.value = requestAnimationFrame(simulationLoop);
+        };
+
+        const startSimulation = () => {
+            if (isRunning.value) return;
+            isRunning.value = true;
+            addLog(`Process Started: ${activeTab.value}`, 'system');
+            if (activeTab.value !== 'dijkstra') {
+                animationFrameId.value = requestAnimationFrame(simulationLoop);
+            }
+        };
+
+        const stopSimulation = () => {
+            isRunning.value = false;
+            cancelAnimationFrame(animationFrameId.value);
+            animationFrameId.value = null;
+            addLog('Process Halted.', 'system');
+        };
+
+        const resetSimulation = () => {
+            stopSimulation();
+            switch (activeTab.value) {
+                case 'q-learning': initQLearning(); break;
+                case 'dijkstra': initDijkstra(); break;
+                case 'sorting': initSorting(); break;
+                case 'monte-carlo': initMonteCarlo(); break;
+            }
+        };
+
+        const stepSimulation = () => {
+            if (activeTab.value === 'dijkstra') runDijkstraStep();
+        };
+
+        const changeTab = (tabId) => {
+            stopSimulation();
+            activeTab.value = tabId;
+            resetSimulation();
+        };
+        
+        watch(is3DMode, (v) => addLog(`Rendering Context Switched: ${v?'VR-3D':'CANVAS-2D'}`, 'system'));
+
+        onMounted(() => {
+            addLog('System Initialized.', 'system');
+            addLog('Glass-Box Engine Ready.', 'system');
+            resetSimulation();
+        });
+
+        return {
+            activeTab, is3DMode, isRunning, logs, logContainer, tabs, speedMultiplier,
+            qLearning, dijkstra, sorting, monteCarlo,
+            // Exposed methods
+            changeTab, startSimulation, stopSimulation, resetSimulation, stepSimulation,
+            getBarColor, isPathEdge, getNodeColor3D, isNodeActive, getQValueIntensity,
+            // Computed
+            piHistoryPath, piLineY
+        };
+    }
+}).mount('#app');
+</script>
+</body>
+</html>
