@@ -1,4 +1,4 @@
-🧊 Glass-Box Algorithm Studio v2.0
+🧊 Glass-Box Algorithm Studio
 DEMO
 https://emma019.github.io/Glass-Box-Algorithm-Studio/
 
